@@ -10,7 +10,7 @@ import paho.mqtt.client as mqtt
 import time
 import datetime
 from mqtt_init import *
-
+# :()
 # Global settings
 global clientname, CONNECTED, temp_current
 CONNECTED = False
