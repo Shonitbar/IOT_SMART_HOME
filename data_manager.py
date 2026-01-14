@@ -4,7 +4,15 @@ import sqlite3
 from datetime import datetime
 
 import paho.mqtt.client as mqtt
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5 import QtWidgets, QtCore
+
+# optional plotting
+try:
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    HAS_MPL = True
+except Exception:
+    HAS_MPL = False
 
 import mqtt_init
 from app_manager import client_init, send_msg
@@ -17,8 +25,8 @@ class MqttMessageEvent(QtCore.QObject):
 class DataManagerApp(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Vessel')
-        self.resize(1000, 600)
+        self.setWindowTitle('Smart Home Dashboard')
+        self.resize(1000, 640)
 
         # Apply a modern dark stylesheet
         STYLE = """
@@ -36,133 +44,131 @@ class DataManagerApp(QtWidgets.QMainWindow):
         """
         self.setStyleSheet(STYLE)
 
+        # Main layout
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
-        layout = QtWidgets.QHBoxLayout(central)
+        layout = QtWidgets.QVBoxLayout(central)
+        layout.setContentsMargins(24, 24, 24, 24)
 
-        # Left: metrics and header
-        left = QtWidgets.QVBoxLayout()
-
-        header = QtWidgets.QHBoxLayout()
-        header.addStretch()
-        title = QtWidgets.QLabel('Vessel')
-        title.setStyleSheet('font-size:18px; font-weight:700; color: #e6fff9;')
+        # Top navbar (title centered)
+        navbar = QtWidgets.QHBoxLayout()
+        navbar.addStretch()
+        title = QtWidgets.QLabel('Smart Home Dashboard')
+        title.setStyleSheet('font-size:20px; font-weight:800; color: #e6fff9;')
         title.setAlignment(QtCore.Qt.AlignCenter)
-        header.addWidget(title)
-        header.addStretch()
+        navbar.addWidget(title)
+        navbar.addStretch()
+        layout.addLayout(navbar)
 
-        # Right-side small controls (kept at right but title remains centered)
-        right_controls = QtWidgets.QHBoxLayout()
+        # Central card container
+        center_card = QtWidgets.QFrame()
+        center_card.setObjectName('card')
+        center_card.setMinimumHeight(320)
+        center_card.setMaximumHeight(420)
+        center_card_layout = QtWidgets.QVBoxLayout(center_card)
+        center_card_layout.setContentsMargins(28, 24, 28, 24)
+        center_card_layout.setSpacing(20)
+
+        # Metrics row (centered)
+        metrics_row = QtWidgets.QHBoxLayout()
+        metrics_row.setSpacing(18)
+        metrics_row.setAlignment(QtCore.Qt.AlignCenter)
+
+        def make_metric(name):
+            f = QtWidgets.QFrame()
+            f.setObjectName('card')
+            v = QtWidgets.QVBoxLayout(f)
+            v.setAlignment(QtCore.Qt.AlignCenter)
+            lbl_val = QtWidgets.QLabel('--')
+            lbl_val.setObjectName('metricValue')
+            lbl_val.setAlignment(QtCore.Qt.AlignCenter)
+            lbl_name = QtWidgets.QLabel(name)
+            lbl_name.setObjectName('metricLabel')
+            lbl_name.setAlignment(QtCore.Qt.AlignCenter)
+            v.addWidget(lbl_val)
+            v.addWidget(lbl_name)
+            return f, lbl_val
+
+        temp_card, self.temp_label_value = make_metric('Temperature (°C)')
+        hum_card, self.hum_label_value = make_metric('Humidity (%)')
+        lux_card, self.lux_label_value = make_metric('Light (lux)')
+
+        temp_card.setFixedSize(240, 140)
+        hum_card.setFixedSize(240, 140)
+        lux_card.setFixedSize(240, 140)
+
+        metrics_row.addWidget(temp_card)
+        metrics_row.addWidget(hum_card)
+        metrics_row.addWidget(lux_card)
+
+        center_card_layout.addLayout(metrics_row)
+
+        # Threshold controls (centered)
+        thr_layout = QtWidgets.QHBoxLayout()
+        thr_layout.setAlignment(QtCore.Qt.AlignCenter)
+        thr_layout.setSpacing(16)
+
+        lbl_t = QtWidgets.QLabel('Temp THR:')
+        lbl_t.setAlignment(QtCore.Qt.AlignCenter)
+        self.temp_thr = QtWidgets.QDoubleSpinBox()
+        self.temp_thr.setRange(-1000, 1000)
+        self.temp_thr.setValue(50.0)
+
+        lbl_h = QtWidgets.QLabel('Hum THR:')
+        lbl_h.setAlignment(QtCore.Qt.AlignCenter)
+        self.hum_thr = QtWidgets.QDoubleSpinBox()
+        self.hum_thr.setRange(0, 100)
+        self.hum_thr.setValue(80.0)
+
+        lbl_l = QtWidgets.QLabel('Lux THR:')
+        lbl_l.setAlignment(QtCore.Qt.AlignCenter)
+        self.lux_thr = QtWidgets.QDoubleSpinBox()
+        self.lux_thr.setRange(0, 100000)
+        self.lux_thr.setValue(1000.0)
+
+        thr_layout.addWidget(lbl_t)
+        thr_layout.addWidget(self.temp_thr)
+        thr_layout.addWidget(lbl_h)
+        thr_layout.addWidget(self.hum_thr)
+        thr_layout.addWidget(lbl_l)
+        thr_layout.addWidget(self.lux_thr)
+
+        center_card_layout.addLayout(thr_layout)
+
+        # Action controls below card
+        actions = QtWidgets.QHBoxLayout()
+        actions.setAlignment(QtCore.Qt.AlignCenter)
         self.btn_connect = QtWidgets.QPushButton('Connect')
-        self.btn_connect.setFixedWidth(120)
+        self.btn_connect.setFixedWidth(140)
         self.btn_connect.clicked.connect(self.toggle_connect)
-        right_controls.addWidget(self.btn_connect)
-
-        # Console toggle button
+        self.btn_history = QtWidgets.QPushButton('History')
+        self.btn_history.setFixedWidth(120)
+        self.btn_history.clicked.connect(self.open_history)
         self.btn_toggle_log = QtWidgets.QPushButton('Hide Console')
         self.btn_toggle_log.setCheckable(True)
         self.btn_toggle_log.setChecked(True)
         self.btn_toggle_log.setObjectName('secondary')
         self.btn_toggle_log.clicked.connect(self.toggle_console)
-        right_controls.addWidget(self.btn_toggle_log)
 
-        self.lbl_status = QtWidgets.QLabel('Disconnected')
-        self.lbl_status.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.lbl_status.setStyleSheet('color: #9fbfc0; margin-left:8px;')
-        right_controls.addWidget(self.lbl_status)
+        actions.addWidget(self.btn_connect)
+        actions.addWidget(self.btn_history)
+        actions.addWidget(self.btn_toggle_log)
+        center_card_layout.addLayout(actions)
 
-        header.addLayout(right_controls)
-        left.addLayout(header)
+        layout.addWidget(center_card, 0, QtCore.Qt.AlignHCenter)
 
-        # Metrics grid
-        grid = QtWidgets.QGridLayout()
-        grid.setSpacing(14)
-
-        # Temperature card
-        temp_card = QtWidgets.QFrame()
-        temp_card.setObjectName('card')
-        tlay = QtWidgets.QVBoxLayout(temp_card)
-        tlay.setAlignment(QtCore.Qt.AlignCenter)
-        self.temp_label_value = QtWidgets.QLabel('--')
-        self.temp_label_value.setObjectName('metricValue')
-        self.temp_label_value.setAlignment(QtCore.Qt.AlignCenter)
-        self.temp_label_label = QtWidgets.QLabel('Temperature (°C)')
-        self.temp_label_label.setObjectName('metricLabel')
-        self.temp_label_label.setAlignment(QtCore.Qt.AlignCenter)
-        tlay.addWidget(self.temp_label_value)
-        tlay.addWidget(self.temp_label_label)
-        grid.addWidget(temp_card, 0, 0)
-
-        # Humidity card
-        hum_card = QtWidgets.QFrame()
-        hum_card.setObjectName('card')
-        hlay = QtWidgets.QVBoxLayout(hum_card)
-        hlay.setAlignment(QtCore.Qt.AlignCenter)
-        self.hum_label_value = QtWidgets.QLabel('--')
-        self.hum_label_value.setObjectName('metricValue')
-        self.hum_label_value.setAlignment(QtCore.Qt.AlignCenter)
-        self.hum_label_label = QtWidgets.QLabel('Humidity (%)')
-        self.hum_label_label.setObjectName('metricLabel')
-        self.hum_label_label.setAlignment(QtCore.Qt.AlignCenter)
-        hlay.addWidget(self.hum_label_value)
-        hlay.addWidget(self.hum_label_label)
-        grid.addWidget(hum_card, 0, 1)
-
-        # Lux card
-        lux_card = QtWidgets.QFrame()
-        lux_card.setObjectName('card')
-        llay = QtWidgets.QVBoxLayout(lux_card)
-        llay.setAlignment(QtCore.Qt.AlignCenter)
-        self.lux_label_value = QtWidgets.QLabel('--')
-        self.lux_label_value.setObjectName('metricValue')
-        self.lux_label_value.setAlignment(QtCore.Qt.AlignCenter)
-        self.lux_label_label = QtWidgets.QLabel('Light (lux)')
-        self.lux_label_label.setObjectName('metricLabel')
-        self.lux_label_label.setAlignment(QtCore.Qt.AlignCenter)
-        llay.addWidget(self.lux_label_value)
-        llay.addWidget(self.lux_label_label)
-        grid.addWidget(lux_card, 0, 2)
-
-        left.addLayout(grid)
-
-        # Spacer and thresholds group
-        left.addSpacing(8)
-        thr_group = QtWidgets.QGroupBox()
-        thr_layout = QtWidgets.QHBoxLayout(thr_group)
-        thr_layout.setAlignment(QtCore.Qt.AlignCenter)
-        lbl_t = QtWidgets.QLabel('Temp THR:')
-        lbl_t.setAlignment(QtCore.Qt.AlignCenter)
-        thr_layout.addWidget(lbl_t)
-        self.temp_thr = QtWidgets.QDoubleSpinBox()
-        self.temp_thr.setRange(-1000, 1000)
-        self.temp_thr.setValue(50.0)
-        thr_layout.addWidget(self.temp_thr)
-        lbl_h = QtWidgets.QLabel('Hum THR:')
-        lbl_h.setAlignment(QtCore.Qt.AlignCenter)
-        thr_layout.addWidget(lbl_h)
-        self.hum_thr = QtWidgets.QDoubleSpinBox()
-        self.hum_thr.setRange(0, 100)
-        self.hum_thr.setValue(80.0)
-        thr_layout.addWidget(self.hum_thr)
-        lbl_l = QtWidgets.QLabel('Lux THR:')
-        lbl_l.setAlignment(QtCore.Qt.AlignCenter)
-        thr_layout.addWidget(lbl_l)
-        self.lux_thr = QtWidgets.QDoubleSpinBox()
-        self.lux_thr.setRange(0, 100000)
-        self.lux_thr.setValue(1000.0)
-        thr_layout.addWidget(self.lux_thr)
-
-        left.addWidget(thr_group)
-
-        layout.addLayout(left, 2)
-
-        # Right: log and controls
-        right = QtWidgets.QVBoxLayout()
-
+        # Collapsible log area (starts visible)
         self.log = QtWidgets.QTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMinimumWidth(360)
-        right.addWidget(self.log, 3)
+        self.log.setFixedHeight(220)
+        self.log.setVisible(True)
+        layout.addWidget(self.log)
+
+        # Status footer (centered)
+        self.lbl_status = QtWidgets.QLabel('Disconnected')
+        self.lbl_status.setAlignment(QtCore.Qt.AlignCenter)
+        self.lbl_status.setStyleSheet('color: #9fbfc0;')
+        layout.addWidget(self.lbl_status)
 
         # DB init
         self.db_path = 'sensor_data.db'
@@ -183,8 +189,7 @@ class DataManagerApp(QtWidgets.QMainWindow):
         self._display_timer = QtCore.QTimer(self)
         self._display_timer.timeout.connect(self.update_display)
         self._display_timer.start(1000)
-
-        layout.addLayout(right, 1)
+        
 
     def _ensure_db(self):
         conn = sqlite3.connect(self.db_path)
@@ -397,6 +402,229 @@ class DataManagerApp(QtWidgets.QMainWindow):
                 self.append_log('Failed to send alarm: ' + str(e))
             # show GUI alert
             QtWidgets.QMessageBox.warning(self, 'Alarm', msg)
+
+    def open_history(self):
+        dlg = HistoryDialog(self, self.db_path)
+        dlg.exec_()
+
+
+class HistoryDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None, db_path='sensor_data.db'):
+        super().__init__(parent)
+        self.setWindowTitle('Message History & Statistics')
+        self.resize(900, 600)
+        self.db_path = db_path
+
+        # Main layout: controls on top, table left, chart+stats right
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Top controls: metric selector, limit, refresh
+        controls = QtWidgets.QHBoxLayout()
+        controls.setAlignment(QtCore.Qt.AlignLeft)
+        controls.addWidget(QtWidgets.QLabel('Metric:'))
+        self.metric_combo = QtWidgets.QComboBox()
+        self.metric_combo.addItems(['temperature', 'humidity', 'lux'])
+        controls.addWidget(self.metric_combo)
+
+        controls.addWidget(QtWidgets.QLabel('Rows:'))
+        self.limit_spin = QtWidgets.QSpinBox()
+        self.limit_spin.setRange(10, 5000)
+        self.limit_spin.setValue(500)
+        controls.addWidget(self.limit_spin)
+
+        self.btn_refresh = QtWidgets.QPushButton('Refresh')
+        self.btn_refresh.clicked.connect(self.load_data)
+        controls.addWidget(self.btn_refresh)
+
+        controls.addStretch()
+        layout.addLayout(controls)
+
+        # content split: table | chart+stats
+        content = QtWidgets.QHBoxLayout()
+
+        # Table for messages (left)
+        self.table = QtWidgets.QTableWidget()
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels(['id', 'ts', 'topic', 'temperature', 'humidity', 'lux', 'payload'])
+        self.table.horizontalHeader().setStretchLastSection(False)
+        self.table.horizontalHeader().setSectionResizeMode(6, QtWidgets.QHeaderView.Stretch)
+        self.table.setAlternatingRowColors(True)
+        # make text visible on dark background
+        # Dark-blue theme with white text for better contrast
+        self.table.setStyleSheet(
+            "QTableWidget { background: #071d3a; color: #ffffff; gridline-color: #08314d; alternate-background-color: #0b2a46; }"
+            "QHeaderView::section { background: #07253f; color: #ffffff; padding:6px; border: none; }"
+            "QTableWidget::item:selected { background: #0f9f9a; color: #001017; }"
+        )
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.table.itemSelectionChanged.connect(self.on_table_select)
+
+        content.addWidget(self.table, 2)
+
+        # Right panel: chart + summary
+        right_panel = QtWidgets.QVBoxLayout()
+
+        # Chart area
+        if HAS_MPL:
+            self.fig = Figure(figsize=(4, 3))
+            self.canvas = FigureCanvas(self.fig)
+            right_panel.addWidget(self.canvas, 3)
+        else:
+            self.canvas = None
+            self.no_chart_label = QtWidgets.QLabel('matplotlib not installed — install matplotlib to see charts')
+            self.no_chart_label.setWordWrap(True)
+            right_panel.addWidget(self.no_chart_label, 1)
+
+        # Summary area
+        self.summary_label = QtWidgets.QLabel('Loading statistics...')
+        self.summary_label.setWordWrap(True)
+        right_panel.addWidget(self.summary_label, 1)
+
+        content.addLayout(right_panel, 1)
+        layout.addLayout(content, 1)
+
+        # Bottom controls: export, close
+        btns = QtWidgets.QHBoxLayout()
+        btns.addStretch()
+        self.btn_export = QtWidgets.QPushButton('Export CSV')
+        self.btn_export.clicked.connect(self.export_csv)
+        btns.addWidget(self.btn_export)
+
+        self.btn_close = QtWidgets.QPushButton('Close')
+        self.btn_close.clicked.connect(self.accept)
+        btns.addWidget(self.btn_close)
+        layout.addLayout(btns)
+
+        # load initial data
+        self.load_data()
+
+    def load_data(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            c = conn.cursor()
+            limit = int(self.limit_spin.value()) if hasattr(self, 'limit_spin') else 500
+            c.execute('SELECT id, ts, topic, payload FROM messages ORDER BY id DESC LIMIT ?', (limit,))
+            rows = c.fetchall()
+        finally:
+            conn.close()
+
+        # populate table
+        self.table.setRowCount(len(rows))
+
+        temps = []
+        hums = []
+        luxes = []
+
+        for rindex, row in enumerate(rows):
+            _id, ts, topic, payload = row
+            # parse payload
+            temp = hum = lux = ''
+            try:
+                data = json.loads(payload)
+                if isinstance(data, dict):
+                    if 'temperature' in data:
+                        temp = str(data.get('temperature'))
+                        try:
+                            temps.append(float(data.get('temperature')))
+                        except Exception:
+                            pass
+                    if 'humidity' in data:
+                        hum = str(data.get('humidity'))
+                        try:
+                            hums.append(float(data.get('humidity')))
+                        except Exception:
+                            pass
+                    if 'lux' in data:
+                        lux = str(data.get('lux'))
+                        try:
+                            luxes.append(float(data.get('lux')))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            cells = [str(_id), ts, topic, temp, hum, lux, payload]
+            for cidx, val in enumerate(cells):
+                item = QtWidgets.QTableWidgetItem(val)
+                item.setFlags(item.flags() ^ QtCore.Qt.ItemIsEditable)
+                item.setForeground(QtCore.Qt.white)
+                self.table.setItem(rindex, cidx, item)
+
+        # compute stats
+        def stats(arr):
+            if not arr:
+                return 'n/a'
+            return f'count={len(arr)} min={min(arr):.2f} max={max(arr):.2f} avg={sum(arr)/len(arr):.2f}'
+
+        summary = f"Temperature: {stats(temps)}\nHumidity: {stats(hums)}\nLight (lux): {stats(luxes)}\nRows shown: {len(rows)}"
+        self.summary_label.setText(summary)
+
+        # update chart
+        if HAS_MPL:
+            self.plot_metric()
+
+    def export_csv(self):
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Export CSV', 'history.csv', 'CSV Files (*.csv)')
+        if not path:
+            return
+
+        # read current table and write
+        with open(path, 'w', encoding='utf-8') as f:
+            # header
+            headers = [self.table.horizontalHeaderItem(i).text() for i in range(self.table.columnCount())]
+            f.write(','.join(headers) + '\n')
+            for r in range(self.table.rowCount()):
+                vals = []
+                for c in range(self.table.columnCount()):
+                    item = self.table.item(r, c)
+                    vals.append('"' + (item.text().replace('"', '""') if item else '') + '"')
+                f.write(','.join(vals) + '\n')
+        QtWidgets.QMessageBox.information(self, 'Export', f'Exported {self.table.rowCount()} rows to {path}')
+
+    def on_table_select(self):
+        # when a row is selected, update chart to show topic-specific series
+        if not HAS_MPL:
+            return
+        self.plot_metric()
+
+    def plot_metric(self):
+        metric = self.metric_combo.currentText()
+        # fetch recent metric values for plotting
+        conn = sqlite3.connect(self.db_path)
+        try:
+            c = conn.cursor()
+            c.execute('SELECT ts, payload FROM messages ORDER BY id DESC LIMIT ?', (int(self.limit_spin.value()),))
+            rows = c.fetchall()
+        finally:
+            conn.close()
+
+        times = []
+        vals = []
+        # rows are newest first -> reverse for time order
+        for ts, payload in reversed(rows):
+            try:
+                data = json.loads(payload)
+                if isinstance(data, dict) and metric in data:
+                    v = float(data.get(metric))
+                    vals.append(v)
+                    # try parse ts as ISO
+                    try:
+                        times.append(datetime.fromisoformat(ts))
+                    except Exception:
+                        times.append(ts)
+            except Exception:
+                pass
+
+        self.fig.clear()
+        ax = self.fig.add_subplot(111)
+        if vals:
+            ax.plot(vals, '-o', color='#0f9f9a')
+            ax.set_title(f'{metric} (last {len(vals)} samples)')
+            ax.grid(True, color='#122027')
+        else:
+            ax.text(0.5, 0.5, 'No data for metric', ha='center', va='center', color='white')
+        self.canvas.draw()
 
 
 def main():
