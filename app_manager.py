@@ -3,7 +3,7 @@
 
 import paho.mqtt.client as mqtt
 import time
-
+import json
 import random
 from mqtt_init import *
 
@@ -33,9 +33,12 @@ def on_message(client, userdata, msg):
     topic=msg.topic
     m_decode=str(msg.payload.decode("utf-8","ignore"))
     ic("message from: " + topic, m_decode)
-    if float(m_decode.split(': ')[1]) < gas_weight_THR:
-        ic("Threshold warning! The gas weght is: " + m_decode.split(': ')[1])
-        send_msg(client, topic_alarm, "Threshold warning! The gas weght is: " + m_decode.split(': ')[1])
+    data = json.loads(m_decode)
+    lux_value = data["lux"]
+    print("Lux:", lux_value)
+    #if float(m_decode.split(': ')[1]) < gas_weight_THR:
+    #    ic("Threshold warning! The gas weght is: " + m_decode.split(': ')[1])
+    #    send_msg(client, topic_alarm, "Threshold warning! The gas weght is: " + m_decode.split(': ')[1])
    
 
 def send_msg(client, topic, message):

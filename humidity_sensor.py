@@ -143,7 +143,7 @@ class MainWindow(QMainWindow):
         print(f'Humidity Update: {display_val}%')
         
         self.connectionDock.Humidity.setText(display_val + " %")        
-        self.mc.publish_to(DHT_topic, f'{{"humidity": {display_val}}}')
+        self.mc.publish_to(DHT_topic, f'{{"humidity"+ display_val}}')
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
