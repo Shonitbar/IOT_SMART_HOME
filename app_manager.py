@@ -34,8 +34,15 @@ def on_message(client, userdata, msg):
     m_decode=str(msg.payload.decode("utf-8","ignore"))
     ic("message from: " + topic, m_decode)
     data = json.loads(m_decode)
-    lux_value = data["lux"]
-    print("Lux:", lux_value)
+    if "lux" in data:
+        lux_value = data["lux"]
+        print("Lux:", lux_value)
+    elif "temperature" in data:
+        temp_value = data["temperature"]
+        print("Temperature:", temp_value)
+    elif "humidity" in data:
+        hum_value = data["humidity"]
+        print("Humidity:", hum_value)
     #if float(m_decode.split(': ')[1]) < gas_weight_THR:
     #    ic("Threshold warning! The gas weght is: " + m_decode.split(': ')[1])
     #    send_msg(client, topic_alarm, "Threshold warning! The gas weght is: " + m_decode.split(': ')[1])
