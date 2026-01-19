@@ -15,7 +15,8 @@ except Exception:
     HAS_MPL = False
 
 import mqtt_init
-from app_manager import client_init, send_msg
+from mqtt_init import client_init, send_msg
+import room_config
 
 
 class MqttMessageEvent(QtCore.QObject):
@@ -25,8 +26,8 @@ class MqttMessageEvent(QtCore.QObject):
 class DataManagerApp(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Smart Home Dashboard')
-        self.resize(1000, 640)
+        self.setWindowTitle('Vessel Application')
+        self.resize(1200, 700)
 
         # Apply a modern dark stylesheet
         STYLE = """
@@ -41,6 +42,8 @@ class DataManagerApp(QtWidgets.QMainWindow):
         QDoubleSpinBox { background: #071018; border: 1px solid #122027; color: #d1e8e2; }
         QSlider::handle:horizontal { background: #0f9f9a; }
         QGroupBox { border: none; }
+        QTabBar::tab { background: #0f1b22; color: #9fbfc0; padding: 8px 20px; }
+        QTabBar::tab:selected { background: #0f9f9a; color: #000000; }
         """
         self.setStyleSheet(STYLE)
 
@@ -53,55 +56,81 @@ class DataManagerApp(QtWidgets.QMainWindow):
         # Top navbar (title centered)
         navbar = QtWidgets.QHBoxLayout()
         navbar.addStretch()
-        title = QtWidgets.QLabel('Smart Home Dashboard')
+        title = QtWidgets.QLabel('Vessel')
         title.setStyleSheet('font-size:20px; font-weight:800; color: #e6fff9;')
         title.setAlignment(QtCore.Qt.AlignCenter)
         navbar.addWidget(title)
         navbar.addStretch()
         layout.addLayout(navbar)
 
-        # Central card container
-        center_card = QtWidgets.QFrame()
-        center_card.setObjectName('card')
-        center_card.setMinimumHeight(320)
-        center_card.setMaximumHeight(420)
-        center_card_layout = QtWidgets.QVBoxLayout(center_card)
-        center_card_layout.setContentsMargins(28, 24, 28, 24)
-        center_card_layout.setSpacing(20)
+        # Room tabs
+        self.room_tabs = QtWidgets.QTabWidget()
+        self.room_tabs.currentChanged.connect(self.on_room_changed)
+        
+        # Dictionary to store room UI elements
+        self.room_cards = {}
+        self.room_latest = {}
+        
+        # Create tab for each room
+        for room_name in room_config.get_room_names():
+            self.room_latest[room_name] = {'temperature': None, 'humidity': None, 'lux': None}
+            
+            # Create card container for this room
+            center_card = QtWidgets.QFrame()
+            center_card.setObjectName('card')
+            center_card.setMinimumHeight(220)
+            center_card_layout = QtWidgets.QVBoxLayout(center_card)
+            center_card_layout.setContentsMargins(28, 24, 28, 24)
+            center_card_layout.setSpacing(20)
 
-        # Metrics row (centered)
-        metrics_row = QtWidgets.QHBoxLayout()
-        metrics_row.setSpacing(18)
-        metrics_row.setAlignment(QtCore.Qt.AlignCenter)
+            # Metrics row (centered)
+            metrics_row = QtWidgets.QHBoxLayout()
+            metrics_row.setSpacing(18)
+            metrics_row.setAlignment(QtCore.Qt.AlignCenter)
 
-        def make_metric(name):
-            f = QtWidgets.QFrame()
-            f.setObjectName('card')
-            v = QtWidgets.QVBoxLayout(f)
-            v.setAlignment(QtCore.Qt.AlignCenter)
-            lbl_val = QtWidgets.QLabel('--')
-            lbl_val.setObjectName('metricValue')
-            lbl_val.setAlignment(QtCore.Qt.AlignCenter)
-            lbl_name = QtWidgets.QLabel(name)
-            lbl_name.setObjectName('metricLabel')
-            lbl_name.setAlignment(QtCore.Qt.AlignCenter)
-            v.addWidget(lbl_val)
-            v.addWidget(lbl_name)
-            return f, lbl_val
+            def make_metric(name):
+                f = QtWidgets.QFrame()
+                f.setObjectName('card')
+                v = QtWidgets.QVBoxLayout(f)
+                v.setAlignment(QtCore.Qt.AlignCenter)
+                lbl_val = QtWidgets.QLabel('--')
+                lbl_val.setObjectName('metricValue')
+                lbl_val.setAlignment(QtCore.Qt.AlignCenter)
+                lbl_name = QtWidgets.QLabel(name)
+                lbl_name.setObjectName('metricLabel')
+                lbl_name.setAlignment(QtCore.Qt.AlignCenter)
+                v.addWidget(lbl_val)
+                v.addWidget(lbl_name)
+                return f, lbl_val
 
-        temp_card, self.temp_label_value = make_metric('Temperature (°C)')
-        hum_card, self.hum_label_value = make_metric('Humidity (%)')
-        lux_card, self.lux_label_value = make_metric('Light (lux)')
+            temp_card, temp_val = make_metric('Temperature (°C)')
+            hum_card, hum_val = make_metric('Humidity (%)')
+            lux_card, lux_val = make_metric('Light (lux)')
 
-        temp_card.setFixedSize(240, 140)
-        hum_card.setFixedSize(240, 140)
-        lux_card.setFixedSize(240, 140)
+            temp_card.setFixedSize(240, 140)
+            hum_card.setFixedSize(240, 140)
+            lux_card.setFixedSize(240, 140)
 
-        metrics_row.addWidget(temp_card)
-        metrics_row.addWidget(hum_card)
-        metrics_row.addWidget(lux_card)
+            metrics_row.addWidget(temp_card)
+            metrics_row.addWidget(hum_card)
+            metrics_row.addWidget(lux_card)
 
-        center_card_layout.addLayout(metrics_row)
+            center_card_layout.addLayout(metrics_row)
+            
+            # Store references for this room
+            self.room_cards[room_name] = {
+                'frame': center_card,
+                'temp_val': temp_val,
+                'hum_val': hum_val,
+                'lux_val': lux_val
+            }
+            
+            self.room_tabs.addTab(center_card, room_name)
+
+        layout.addWidget(self.room_tabs)
+
+        # Store reference to current room for threshold controls
+        self.current_room = room_config.get_room_names()[0]
 
         # Threshold controls (centered)
         thr_layout = QtWidgets.QHBoxLayout()
@@ -133,7 +162,7 @@ class DataManagerApp(QtWidgets.QMainWindow):
         thr_layout.addWidget(lbl_l)
         thr_layout.addWidget(self.lux_thr)
 
-        center_card_layout.addLayout(thr_layout)
+        layout.addLayout(thr_layout)
 
         # Action controls below card
         actions = QtWidgets.QHBoxLayout()
@@ -153,9 +182,7 @@ class DataManagerApp(QtWidgets.QMainWindow):
         actions.addWidget(self.btn_connect)
         actions.addWidget(self.btn_history)
         actions.addWidget(self.btn_toggle_log)
-        center_card_layout.addLayout(actions)
-
-        layout.addWidget(center_card, 0, QtCore.Qt.AlignHCenter)
+        layout.addLayout(actions)
 
         # Collapsible log area (starts visible)
         self.log = QtWidgets.QTextEdit()
@@ -181,9 +208,6 @@ class DataManagerApp(QtWidgets.QMainWindow):
 
         # keep track if connected
         self._connected = False
-
-        # Latest readings cache
-        self.latest = {'temperature': None, 'humidity': None, 'lux': None}
 
         # Timer to refresh metric cards
         self._display_timer = QtCore.QTimer(self)
@@ -253,6 +277,13 @@ class DataManagerApp(QtWidgets.QMainWindow):
         self.lbl_status.setText('Disconnected')
         self.append_log('Disconnected from broker')
 
+    def on_room_changed(self, index):
+        """Handle room tab change"""
+        room_names = room_config.get_room_names()
+        if 0 <= index < len(room_names):
+            self.current_room = room_names[index]
+            self.update_display()
+
     def toggle_console(self, checked: bool):
         # Show/hide the log console
         try:
@@ -287,22 +318,49 @@ class DataManagerApp(QtWidgets.QMainWindow):
             data = None
 
         if isinstance(data, dict):
-            # cache latest numeric readings for display
-            try:
-                if 'temperature' in data:
-                    self.latest['temperature'] = float(data['temperature'])
-            except Exception:
-                pass
-            try:
-                if 'humidity' in data:
-                    self.latest['humidity'] = float(data['humidity'])
-            except Exception:
-                pass
-            try:
-                if 'lux' in data:
-                    self.latest['lux'] = float(data['lux'])
-            except Exception:
-                pass
+            # Determine which room this message belongs to
+            room_name = room_config.get_room_from_topic(topic)
+            sensor_type = room_config.get_sensor_type_from_topic(topic)
+            self.append_log(f'DEBUG: Topic {topic} mapped to room: {room_name}, sensor: {sensor_type}')
+            
+            if room_name:
+                # cache latest numeric readings for this room
+                # Try multiple possible key names for robustness
+                try:
+                    if sensor_type == 'temperature' or 'temperature' in data:
+                        val = data.get('temperature') or data.get('temp') or data.get('Temp') or data.get('TEMP')
+                        if val is not None:
+                            self.room_latest[room_name]['temperature'] = float(val)
+                except Exception as e:
+                    self.append_log(f'DEBUG: Failed to parse temperature: {e}')
+                
+                try:
+                    if sensor_type == 'humidity' or 'humidity' in data:
+                        # Handle various humidity formats
+                        val = data.get('humidity')
+                        if val is None:
+                            val = data.get('Humidity (%)')
+                        if val is None:
+                            val = data.get('humidity_%')
+                        if val is None:
+                            val = data.get('hum')
+                        
+                        if val is not None:
+                            # Remove % sign if present
+                            if isinstance(val, str):
+                                val = val.replace('%', '').strip()
+                            self.room_latest[room_name]['humidity'] = float(val)
+                            self.append_log(f'DEBUG: Updated {room_name} humidity to {self.room_latest[room_name]["humidity"]}')
+                except Exception as e:
+                    self.append_log(f'DEBUG: Failed to parse humidity: {e}')
+                
+                try:
+                    if sensor_type == 'light' or sensor_type == 'lux' or 'lux' in data:
+                        val = data.get('lux') or data.get('light') or data.get('Light') or data.get('lux')
+                        if val is not None:
+                            self.room_latest[room_name]['lux'] = float(val)
+                except Exception as e:
+                    self.append_log(f'DEBUG: Failed to parse lux: {e}')
 
             self._process_data(topic, data)
 
@@ -310,41 +368,54 @@ class DataManagerApp(QtWidgets.QMainWindow):
             self.update_display()
 
     def update_display(self):
+        # Get the current room's latest data
+        room_data = self.room_latest.get(self.current_room, {'temperature': None, 'humidity': None, 'lux': None})
+        room_ui = self.room_cards.get(self.current_room, {})
+        
+        if not room_ui:
+            return
+        
         # Temperature
-        t = self.latest.get('temperature')
-        if t is None:
-            self.temp_label_value.setText('--')
-            self.temp_label_value.setStyleSheet('color: #ffffff')
-        else:
-            self.temp_label_value.setText(f'{t:.1f}°C')
-            if t >= float(self.temp_thr.value()):
-                self.temp_label_value.setStyleSheet('color: #ff6b6b')
+        t = room_data.get('temperature')
+        temp_label = room_ui.get('temp_val')
+        if temp_label:
+            if t is None:
+                temp_label.setText('--')
+                temp_label.setStyleSheet('color: #ffffff')
             else:
-                self.temp_label_value.setStyleSheet('color: #9ff4ea')
+                temp_label.setText(f'{t:.1f}°C')
+                if t >= float(self.temp_thr.value()):
+                    temp_label.setStyleSheet('color: #ff6b6b')
+                else:
+                    temp_label.setStyleSheet('color: #9ff4ea')
 
         # Humidity
-        h = self.latest.get('humidity')
-        if h is None:
-            self.hum_label_value.setText('--')
-            self.hum_label_value.setStyleSheet('color: #ffffff')
-        else:
-            self.hum_label_value.setText(f'{h:.1f}%')
-            if h >= float(self.hum_thr.value()):
-                self.hum_label_value.setStyleSheet('color: #ff6b6b')
+        h = room_data.get('humidity')
+        hum_label = room_ui.get('hum_val')
+        if hum_label:
+            if h is None:
+                hum_label.setText('--')
+                hum_label.setStyleSheet('color: #ffffff')
             else:
-                self.hum_label_value.setStyleSheet('color: #9ff4ea')
+                hum_label.setText(f'{h:.1f}%')
+                if h >= float(self.hum_thr.value()):
+                    hum_label.setStyleSheet('color: #ff6b6b')
+                else:
+                    hum_label.setStyleSheet('color: #9ff4ea')
 
         # Lux
-        l = self.latest.get('lux')
-        if l is None:
-            self.lux_label_value.setText('--')
-            self.lux_label_value.setStyleSheet('color: #ffffff')
-        else:
-            self.lux_label_value.setText(f'{l:.0f}')
-            if l >= float(self.lux_thr.value()):
-                self.lux_label_value.setStyleSheet('color: #ff6b6b')
+        l = room_data.get('lux')
+        lux_label = room_ui.get('lux_val')
+        if lux_label:
+            if l is None:
+                lux_label.setText('--')
+                lux_label.setStyleSheet('color: #ffffff')
             else:
-                self.lux_label_value.setStyleSheet('color: #9ff4ea')
+                lux_label.setText(f'{l:.0f}')
+                if l >= float(self.lux_thr.value()):
+                    lux_label.setStyleSheet('color: #ff6b6b')
+                else:
+                    lux_label.setStyleSheet('color: #9ff4ea')
 
     def _save_message(self, topic, payload):
         conn = sqlite3.connect(self.db_path)
