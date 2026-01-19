@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Single Sensor Publisher GUI
-Select room and sensor type to publish sensor data
-The data_manager will automatically parse it
-"""
 
 import paho.mqtt.client as mqtt
 import time
@@ -16,8 +10,7 @@ from PyQt5 import QtWidgets, QtCore
 
 import room_config
 
-# MQTT Configuration
-nb = 1  # 0 = HIT, 1 = HiveMQ (open)
+nb = 1
 brokers = [str(socket.gethostbyname('vmm1.saaintertrade.com')), str(socket.gethostbyname('broker.hivemq.com'))]
 ports = ['80', '1883']
 usernames = ['MATZI', '']
@@ -59,7 +52,6 @@ class SingleSensorGUI(QtWidgets.QMainWindow):
         self.setWindowTitle('Smart Home Sensor Publisher')
         self.resize(700, 550)
         
-        # Dark theme
         STYLE = """
         QWidget { background: #0f1720; color: #d1e8e2; font-family: 'Segoe UI', 'Roboto', Arial; }
         QMainWindow { background: #0f1720; }
@@ -74,31 +66,31 @@ class SingleSensorGUI(QtWidgets.QMainWindow):
         """
         self.setStyleSheet(STYLE)
         
-        # MQTT setup
+       
         self.client = None
         self.is_connected = False
         self.is_publishing = False
         self.publish_thread = None
         self.sensor_data = SensorData()
         
-        # Main layout
+        
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
         layout = QtWidgets.QVBoxLayout(central)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
         
-        # Title
+        
         title = QtWidgets.QLabel('Sensor Publisher')
         title.setStyleSheet('font-size:18px; font-weight:800; color: #e6fff9;')
         layout.addWidget(title)
         
-        # Broker info
+        
         broker_info = QtWidgets.QLabel(f'📡 Broker: {broker_ip}:{port}')
         broker_info.setStyleSheet('color: #9fbfc0; font-size: 11px;')
         layout.addWidget(broker_info)
         
-        # Room Selection Section
+        
         room_group = QtWidgets.QGroupBox("Room Selection")
         room_layout = QtWidgets.QVBoxLayout()
         
@@ -113,10 +105,10 @@ class SingleSensorGUI(QtWidgets.QMainWindow):
         room_group.setLayout(room_layout)
         layout.addWidget(room_group)
         
-        # Connect room selection change to update topics
+        
         self.room_combo.currentTextChanged.connect(self.update_topics)
         
-        # Temperature Section
+        
         temp_group = QtWidgets.QGroupBox("Temperature Sensor")
         temp_layout = QtWidgets.QVBoxLayout()
         
@@ -151,7 +143,7 @@ class SingleSensorGUI(QtWidgets.QMainWindow):
         temp_group.setLayout(temp_layout)
         layout.addWidget(temp_group)
         
-        # Humidity Section
+        
         hum_group = QtWidgets.QGroupBox("Humidity Sensor")
         hum_layout = QtWidgets.QVBoxLayout()
         
@@ -186,7 +178,7 @@ class SingleSensorGUI(QtWidgets.QMainWindow):
         hum_group.setLayout(hum_layout)
         layout.addWidget(hum_group)
         
-        # Light Section
+        
         lux_group = QtWidgets.QGroupBox("Light Sensor (Lux)")
         lux_layout = QtWidgets.QVBoxLayout()
         
@@ -221,7 +213,7 @@ class SingleSensorGUI(QtWidgets.QMainWindow):
         lux_group.setLayout(lux_layout)
         layout.addWidget(lux_group)
         
-        # Control buttons
+        
         controls = QtWidgets.QHBoxLayout()
         
         self.btn_connect = QtWidgets.QPushButton('Connect')
@@ -241,7 +233,7 @@ class SingleSensorGUI(QtWidgets.QMainWindow):
         
         layout.addLayout(controls)
         
-        # Log
+        
         log_group = QtWidgets.QGroupBox("Log")
         log_layout = QtWidgets.QVBoxLayout()
         self.log = QtWidgets.QTextEdit()
@@ -251,11 +243,10 @@ class SingleSensorGUI(QtWidgets.QMainWindow):
         log_group.setLayout(log_layout)
         layout.addWidget(log_group)
         
-        # Initialize topics based on default room
+        
         self.update_topics()
     
     def update_topics(self):
-        """Update topic labels based on selected room"""
         room_name = self.room_combo.currentText()
         room_data = room_config.ROOMS.get(room_name)
         
@@ -349,7 +340,7 @@ class SingleSensorGUI(QtWidgets.QMainWindow):
     def _publish_loop(self):
         while self.is_publishing and self.is_connected:
             try:
-                # Temperature
+                
                 if self.temp_check.isChecked() and self.temp_topic.text().strip():
                     value = self.sensor_data.get_temperature()
                     self.sensor_data.base_temp = self.temp_base.value()
@@ -357,7 +348,7 @@ class SingleSensorGUI(QtWidgets.QMainWindow):
                     self.client.publish(self.temp_topic.text(), payload)
                     self.temp_value.setText(f"{value} °C")
                 
-                # Humidity
+                
                 if self.hum_check.isChecked() and self.hum_topic.text().strip():
                     value = self.sensor_data.get_humidity()
                     self.sensor_data.base_humidity = self.hum_base.value()
@@ -365,7 +356,7 @@ class SingleSensorGUI(QtWidgets.QMainWindow):
                     self.client.publish(self.hum_topic.text(), payload)
                     self.hum_value.setText(f"{value} %")
                 
-                # Light
+                
                 if self.lux_check.isChecked() and self.lux_topic.text().strip():
                     value = self.sensor_data.get_light()
                     self.sensor_data.base_lux = self.lux_base.value()

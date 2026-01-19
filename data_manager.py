@@ -6,7 +6,7 @@ from datetime import datetime
 import paho.mqtt.client as mqtt
 from PyQt5 import QtWidgets, QtCore
 
-# optional plotting
+
 try:
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -29,7 +29,7 @@ class DataManagerApp(QtWidgets.QMainWindow):
         self.setWindowTitle('Vessel Application')
         self.resize(1200, 700)
 
-        # Apply a modern dark stylesheet
+        
         STYLE = """
         QWidget { background: #0f1720; color: #d1e8e2; font-family: 'Segoe UI', 'Roboto', Arial; }
         QMainWindow { background: #0f1720; }
@@ -47,13 +47,13 @@ class DataManagerApp(QtWidgets.QMainWindow):
         """
         self.setStyleSheet(STYLE)
 
-        # Main layout
+        
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
         layout = QtWidgets.QVBoxLayout(central)
         layout.setContentsMargins(24, 24, 24, 24)
 
-        # Top navbar (title centered)
+        
         navbar = QtWidgets.QHBoxLayout()
         navbar.addStretch()
         title = QtWidgets.QLabel('Vessel')
